@@ -35,7 +35,7 @@ chunks = text_splitter.split_documents(pages)
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 vector_store = Chroma.from_documents(chunks, embeddings, persist_directory="./chroma_db")
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+llm = ChatGroq(model="openai/gpt-oss-20b", temperature=0.2)
 # --- STEP 7B: Define the PDF Search Tool ---
 def pdf_search_function(query: str) -> str:
     """This function is executed whenever the Agent decides to read the PDF."""

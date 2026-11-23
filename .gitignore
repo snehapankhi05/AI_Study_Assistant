@@ -17,6 +17,7 @@ venv.bak/
 
 # Internal Database Persistence Matrices (Vector Store Directories)
 chroma_ui_db/
+chroma_ui_builds/
 chroma_db/
 .chroma/
 
