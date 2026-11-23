@@ -1,4 +1,3 @@
-import base64
 import os
 import re
 import shutil
@@ -170,28 +169,6 @@ def _build_document_artifacts(pdf_bytes: bytes, api_key: str):
 def _remove_tree(path: str) -> None:
     if path and os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
-
-
-def _render_pdf_preview(pdf_bytes: bytes) -> None:
-    if not pdf_bytes:
-        st.info("Upload and initialize a PDF to view it here.")
-        return
-
-    if hasattr(st, "pdf"):
-        try:
-            st.pdf(pdf_bytes, height=520)
-            return
-        except Exception:
-            pass
-
-    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
-    pdf_display = (
-        f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
-        f'width="100%" height="520" type="application/pdf">'
-        f"Inline PDF preview is not available in this browser."
-        f"</iframe>"
-    )
-    st.markdown(pdf_display, unsafe_allow_html=True)
 
 
 def _render_study_lounge() -> None:
@@ -401,6 +378,9 @@ def main() -> None:
                     st.session_state.status_level = "success"
                 st.rerun()
 
+        if st.session_state.pdf_name:
+            st.caption(f"Loaded: {st.session_state.pdf_name} ({st.session_state.page_count} pages)")
+
         st.divider()
         st.header("Mode")
         mode_choice = st.radio(
@@ -411,18 +391,10 @@ def main() -> None:
         )
         st.session_state.app_mode = mode_choice
 
-    left_col, right_col = st.columns([1, 1.3])
-    with left_col:
-        st.subheader("PDF Viewer")
-        if st.session_state.pdf_name:
-            st.caption(f"File: {st.session_state.pdf_name} | Pages: {st.session_state.page_count}")
-        _render_pdf_preview(st.session_state.pdf_bytes)
-
-    with right_col:
-        if st.session_state.app_mode == "study":
-            _render_study_lounge()
-        else:
-            _render_quiz_panel()
+    if st.session_state.app_mode == "study":
+        _render_study_lounge()
+    else:
+        _render_quiz_panel()
 
 
 if __name__ == "__main__":
