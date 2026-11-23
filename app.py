@@ -32,7 +32,6 @@ load_dotenv()
 
 STAGING_ROOT = "./chroma_ui_builds"
 UPLOAD_ROOT = "./temp_uploads"
-UNANSWERED_LABEL = "-- Select an answer --"
 
 
 def get_groq_api_key() -> str:
@@ -173,32 +172,24 @@ def _remove_tree(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def _render_pdf_preview(pdf_bytes: bytes, pdf_name: str | None = None) -> None:
+def _render_pdf_preview(pdf_bytes: bytes) -> None:
     if not pdf_bytes:
         st.info("Upload and initialize a PDF to view it here.")
         return
 
-    file_label = pdf_name or "document.pdf"
-    st.download_button(
-        label="Open / Download PDF",
-        data=pdf_bytes,
-        file_name=file_label,
-        mime="application/pdf",
-    )
-
     if hasattr(st, "pdf"):
         try:
-            st.pdf(pdf_bytes, height=500)
+            st.pdf(pdf_bytes, height=520)
             return
         except Exception:
             pass
 
     b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
     pdf_display = (
-        f'<object data="data:application/pdf;base64,{b64_pdf}" '
-        f'type="application/pdf" width="100%" height="500">'
-        f'<p>Your browser blocked the inline PDF preview. Use <b>Open / Download PDF</b> above.</p>'
-        f"</object>"
+        f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
+        f'width="100%" height="520" type="application/pdf">'
+        f"Inline PDF preview is not available in this browser."
+        f"</iframe>"
     )
     st.markdown(pdf_display, unsafe_allow_html=True)
 
@@ -324,14 +315,13 @@ def _render_quiz_panel() -> None:
     with st.form("quiz_form"):
         for idx, q in enumerate(questions):
             st.markdown(f"**Q{idx + 1}. {q['question']}**")
-            radio_options = [UNANSWERED_LABEL] + list(q["options"])
             current_choice = st.session_state.quiz_answers_state.get(idx)
             default_index = (
-                radio_options.index(current_choice) if current_choice in radio_options else 0
+                q["options"].index(current_choice) if current_choice in q["options"] else None
             )
-            selected = st.radio(
+            st.radio(
                 label=f"Options for Q{idx + 1}",
-                options=radio_options,
+                options=q["options"],
                 index=default_index,
                 key=f"quiz_radio_{idx}",
                 label_visibility="collapsed",
@@ -339,13 +329,13 @@ def _render_quiz_panel() -> None:
 
         submitted = st.form_submit_button("Submit Quiz")
         if submitted:
-            cleaned_selections = {}
+            selections = {}
             for idx in range(len(questions)):
-                val = st.session_state.get(f"quiz_radio_{idx}", UNANSWERED_LABEL)
+                val = st.session_state.get(f"quiz_radio_{idx}")
                 st.session_state.quiz_answers_state[idx] = val
-                cleaned_selections[idx] = None if val == UNANSWERED_LABEL else val
+                selections[idx] = val
 
-            result = grade_quiz(questions, cleaned_selections)
+            result = grade_quiz(questions, selections)
             st.session_state.last_quiz_result = result
             st.session_state.quiz_submitted = True
 
@@ -426,7 +416,7 @@ def main() -> None:
         st.subheader("PDF Viewer")
         if st.session_state.pdf_name:
             st.caption(f"File: {st.session_state.pdf_name} | Pages: {st.session_state.page_count}")
-        _render_pdf_preview(st.session_state.pdf_bytes, st.session_state.pdf_name)
+        _render_pdf_preview(st.session_state.pdf_bytes)
 
     with right_col:
         if st.session_state.app_mode == "study":
