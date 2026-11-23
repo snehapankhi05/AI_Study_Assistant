@@ -2,7 +2,6 @@ import base64
 import os
 import re
 import shutil
-import tempfile
 import uuid
 
 from dotenv import load_dotenv
@@ -33,6 +32,7 @@ load_dotenv()
 
 STAGING_ROOT = "./chroma_ui_builds"
 UPLOAD_ROOT = "./temp_uploads"
+UNANSWERED_LABEL = "-- Select an answer --"
 
 
 def get_groq_api_key() -> str:
@@ -173,14 +173,32 @@ def _remove_tree(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def _render_pdf_preview(pdf_bytes: bytes) -> None:
+def _render_pdf_preview(pdf_bytes: bytes, pdf_name: str | None = None) -> None:
     if not pdf_bytes:
         st.info("Upload and initialize a PDF to view it here.")
         return
+
+    file_label = pdf_name or "document.pdf"
+    st.download_button(
+        label="Open / Download PDF",
+        data=pdf_bytes,
+        file_name=file_label,
+        mime="application/pdf",
+    )
+
+    if hasattr(st, "pdf"):
+        try:
+            st.pdf(pdf_bytes, height=500)
+            return
+        except Exception:
+            pass
+
     b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
     pdf_display = (
-        f'<iframe src="data:application/pdf;base64,{b64_pdf}" '
-        f'width="100%" height="520" type="application/pdf"></iframe>'
+        f'<object data="data:application/pdf;base64,{b64_pdf}" '
+        f'type="application/pdf" width="100%" height="500">'
+        f'<p>Your browser blocked the inline PDF preview. Use <b>Open / Download PDF</b> above.</p>'
+        f"</object>"
     )
     st.markdown(pdf_display, unsafe_allow_html=True)
 
@@ -270,6 +288,9 @@ def _generate_quiz() -> None:
         st.error("The model returned an invalid quiz format. Please try generating again.")
         return
 
+    for idx in range(len(questions)):
+        st.session_state.pop(f"quiz_radio_{idx}", None)
+
     st.session_state.quiz_questions = questions
     st.session_state.quiz_submitted = False
     st.session_state.quiz_answers_state = {}
@@ -289,6 +310,8 @@ def _render_quiz_panel() -> None:
             _generate_quiz()
     with col_reset:
         if st.session_state.quiz_questions and st.button("Reset Quiz"):
+            for idx in range(len(st.session_state.quiz_questions)):
+                st.session_state.pop(f"quiz_radio_{idx}", None)
             st.session_state.quiz_submitted = False
             st.session_state.quiz_answers_state = {}
             st.session_state.last_quiz_result = None
@@ -301,20 +324,28 @@ def _render_quiz_panel() -> None:
     with st.form("quiz_form"):
         for idx, q in enumerate(questions):
             st.markdown(f"**Q{idx + 1}. {q['question']}**")
+            radio_options = [UNANSWERED_LABEL] + list(q["options"])
             current_choice = st.session_state.quiz_answers_state.get(idx)
-            default_index = q["options"].index(current_choice) if current_choice in q["options"] else 0
+            default_index = (
+                radio_options.index(current_choice) if current_choice in radio_options else 0
+            )
             selected = st.radio(
                 label=f"Options for Q{idx + 1}",
-                options=q["options"],
+                options=radio_options,
                 index=default_index,
                 key=f"quiz_radio_{idx}",
                 label_visibility="collapsed",
             )
-            st.session_state.quiz_answers_state[idx] = selected
 
         submitted = st.form_submit_button("Submit Quiz")
         if submitted:
-            result = grade_quiz(questions, st.session_state.quiz_answers_state)
+            cleaned_selections = {}
+            for idx in range(len(questions)):
+                val = st.session_state.get(f"quiz_radio_{idx}", UNANSWERED_LABEL)
+                st.session_state.quiz_answers_state[idx] = val
+                cleaned_selections[idx] = None if val == UNANSWERED_LABEL else val
+
+            result = grade_quiz(questions, cleaned_selections)
             st.session_state.last_quiz_result = result
             st.session_state.quiz_submitted = True
 
@@ -325,8 +356,9 @@ def _render_quiz_panel() -> None:
         )
         for idx, row in enumerate(result["rows"]):
             icon = "✅" if row["correct"] else "❌"
+            chosen_display = row["chosen"] or "No answer selected"
             st.markdown(f"**{icon} Q{idx + 1}. {row['question']}**")
-            st.write(f"- Your answer: {row['chosen']}")
+            st.write(f"- Your answer: {chosen_display}")
             st.write(f"- Correct answer: {row['key']}")
             st.write(f"- Explanation: {row['explanation']}")
 
@@ -394,7 +426,7 @@ def main() -> None:
         st.subheader("PDF Viewer")
         if st.session_state.pdf_name:
             st.caption(f"File: {st.session_state.pdf_name} | Pages: {st.session_state.page_count}")
-        _render_pdf_preview(st.session_state.pdf_bytes)
+        _render_pdf_preview(st.session_state.pdf_bytes, st.session_state.pdf_name)
 
     with right_col:
         if st.session_state.app_mode == "study":
